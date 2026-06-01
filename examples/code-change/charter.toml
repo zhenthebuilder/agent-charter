@@ -1,0 +1,67 @@
+# Example: governing an autonomous coding task.
+# The agent must ship a feature with tests, docs, and a changelog entry —
+# and must not touch generated or vendored code.
+
+[charter]
+name = "feature: CSV export"
+description = "Acceptance contract for an unattended implementation task."
+
+[[deliverable]]
+id = "implementation"
+title = "Feature implementation"
+path = "src/export/*.py"
+
+  [[deliverable.check]]
+  type = "exists"
+
+  [[deliverable.check]]
+  type = "command"
+  description = "Type checks pass"
+  run = "python3 -m mypy src/ --ignore-missing-imports"
+  timeout = 300
+
+[[deliverable]]
+id = "tests"
+title = "Tests exist and pass"
+
+  [[deliverable.check]]
+  type = "exists"
+  path = "tests/test_export*.py"
+
+  [[deliverable.check]]
+  type = "command"
+  run = "python3 -m pytest -q"
+  timeout = 600
+
+[[deliverable]]
+id = "docs"
+title = "User-facing documentation"
+path = "docs/export.md"
+
+  [[deliverable.check]]
+  type = "word_count"
+  min = 150
+
+  [[deliverable.check]]
+  type = "contains"
+  pattern = "```"
+  description = "Docs include at least one usage example"
+
+[[deliverable]]
+id = "changelog"
+title = "Changelog entry"
+path = "CHANGELOG.md"
+
+  [[deliverable.check]]
+  type = "contains"
+  pattern = "CSV export"
+  case_sensitive = false
+
+[[deliverable]]
+id = "hands-off"
+title = "Generated and vendored code untouched"
+
+  [[deliverable.check]]
+  type = "command"
+  description = "No diff under vendor/ or *_pb2.py"
+  run = "git diff --name-only HEAD | grep -E '^vendor/|_pb2\\.py$' && exit 1 || exit 0"

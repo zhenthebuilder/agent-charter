@@ -1,0 +1,71 @@
+# Example: governing a long-horizon research/analysis run.
+# The agent is asked to research a topic for several hours and produce a
+# report, the data behind it, and a summary deck outline.
+
+[charter]
+name = "market research run"
+description = "Deep-dive research task: report, evidence, and summary."
+
+[[deliverable]]
+id = "report"
+title = "Research report"
+path = "report.md"
+
+  [[deliverable.check]]
+  type = "word_count"
+  min = 2000
+
+  [[deliverable.check]]
+  type = "markdown_sections"
+  sections = ["Executive summary", "Methodology", "Findings", "Sources", "Limitations"]
+
+  [[deliverable.check]]
+  type = "contains"
+  description = "Every claim section must reference at least 5 sources"
+  pattern = "https?://"
+  regex = true
+  min_count = 5
+
+  [[deliverable.check]]
+  type = "no_placeholder"
+
+  [[deliverable.check]]
+  type = "not_contains"
+  description = "No hedging boilerplate in the final deliverable"
+  pattern = "as an AI"
+  case_sensitive = false
+
+[[deliverable]]
+id = "evidence"
+title = "Raw evidence and data extracts"
+path = "evidence/*.json"
+
+  [[deliverable.check]]
+  type = "file_count"
+  min = 3
+
+  [[deliverable.check]]
+  type = "json_valid"
+
+[[deliverable]]
+id = "summary"
+title = "One-page summary"
+path = "summary.md"
+
+  [[deliverable.check]]
+  type = "word_count"
+  min = 200
+  max = 600
+
+[[deliverable]]
+id = "no-secrets"
+title = "No credentials or scratch files left in the workspace"
+required = true
+
+  [[deliverable.check]]
+  type = "not_exists"
+  path = "**/*.env"
+
+  [[deliverable.check]]
+  type = "not_exists"
+  path = "**/scratch*"

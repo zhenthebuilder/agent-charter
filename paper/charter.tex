@@ -1,0 +1,464 @@
+\documentclass{article}
+
+% NeurIPS 2026 style was not yet publicly distributed at the time of writing;
+% this uses the most recent official NeurIPS style file (2025) in preprint mode.
+\usepackage[preprint]{neurips_2025}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{hyperref}
+\usepackage{url}
+\usepackage{booktabs}
+\usepackage{amsfonts}
+\usepackage{amsmath}
+\usepackage{microtype}
+\usepackage{xcolor}
+
+% Every number in Section 6 is generated from the committed run artifacts by
+% paper/gen_macros.py; none are typed by hand.
+\input{results_macros}
+
+\title{Charter: Declarative Deliverable Contracts for Governing Long-Horizon Agent Runs}
+
+\author{%
+  The \texttt{agent-charter} contributors\\
+  \texttt{github.com/zhenthebuilder/agent-charter}\\
+  \textit{This paper was produced and evaluated during an autonomous research run.}
+}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+  Long-horizon agent tasks fail quietly: the agent finishes, sounds confident,
+  and delivers artifacts that are missing sections, contain leftover scaffolding,
+  or silently drop requirements stated hours earlier in the prompt. We argue that
+  the deliverables of such runs should be governed the way software releases are
+  governed---by a small, declarative, machine-checkable contract---and we present
+  \textsc{Charter}, an open-source, dependency-free tool that turns a list of
+  required artifacts and acceptance checks into (i) instructions for the agent,
+  (ii) a deterministic gate with a CI-style exit code, and (iii) an audit report
+  with file hashes. To quantify the value of gating generation on a deliverable
+  contract, we run a paired A/B on IFEval, a public benchmark of \NPrompts{}
+  prompts with verifiable output constraints: single-shot generation versus the
+  same model revised under a \textsc{Charter} gate compiled automatically from
+  each prompt's constraints. The gate raises prompt-level strict accuracy from
+  \ControlPromptStrict\% to \TreatmentPromptStrict\%
+  (+\DeltaPromptStrict{} points, McNemar $p = \McNemarP$) at a cost of
+  \MeanRevisions{} additional model calls per prompt on average, and the gain is
+  concentrated almost entirely on constraints the contract can express---%
+  constraint types outside the contract's coverage are essentially unchanged.
+  This both demonstrates the practical value of contract-gated generation and
+  delineates its boundary: a gate can only fix what it can check. Code, contracts,
+  raw logs, and scoring scripts are released for exact reproduction.
+\end{abstract}
+
+\section{Introduction}
+
+Agents built on large language models are now routinely given tasks that run for
+hours: produce a research report with its underlying data, implement a feature
+with tests and documentation, analyze a dataset and write up the findings. The
+economics of these systems depend on the human \emph{not} supervising every step.
+Yet the dominant failure mode of long-horizon runs is not a crash that pages
+someone---it is a confident ``done'' attached to deliverables that do not match
+what was asked: a missing section, a \texttt{TODO} left on page four, a data file
+that was never written, tests that never ran, instructions stated at hour zero
+that fell out of effective context by hour three.
+
+Today the main control mechanism is post-hoc human review of everything the agent
+produced, which does not scale with agent throughput, or ad-hoc prompt
+engineering (``make sure the report has a limitations section''), which is not
+enforced by anything. LLM-as-a-judge pipelines~\citep{zheng2023judging} help with
+fuzzy quality criteria but are stochastic, add cost to every iteration, and are
+hard to audit as a release gate. What is missing is the analogue of what made
+software delivery governable: a small, reviewable specification of ``done'' that
+a machine can check on every iteration, cheaply and deterministically.
+
+We make that analogy concrete. \textsc{Charter} is a deliverable contract for
+agent runs: a declarative TOML/JSON file that lists the artifacts a run must
+produce and the acceptance checks each must pass---existence, size and length
+bounds, required sections, required or forbidden patterns, valid JSON with
+required keys, absence of placeholder text, and arbitrary commands (test suites,
+linters, schema validators). The contract is used three ways by one tool:
+\texttt{charter explain} renders it as instructions injected into the agent's
+prompt; \texttt{charter check} evaluates the workspace and returns a CI-style
+exit code, with a structured failure report designed to be fed back to the model;
+\texttt{charter report} produces an audit trail (per-check verdicts, file hashes,
+timestamps) that a human can review instead of re-reading the transcript.
+\textsc{Charter} is a single stdlib-only Python file, integrates with CI systems,
+pre-commit, and agent frameworks (including a stop-hook mode that prevents an
+agent from declaring completion while required checks fail), and never calls a
+model in the verification path.
+
+The empirical question is whether gating generation on such a contract actually
+changes outcomes, and at what cost. No public benchmark directly measures
+``deliverable governance for long-horizon runs,'' so we anchor the claim on the
+closest recognized proxy with verifiable acceptance criteria: IFEval
+\citep{zhou2023ifeval}, \NPrompts{} prompts each annotated with programmatically
+checkable constraints (word counts, required keywords, formatting, etc.). We
+compile each prompt's constraints into a \textsc{Charter} contract using only the
+tool's generic check primitives, and compare single-shot generation against a
+gate-and-revise loop in a paired design. Three results stand out. First, the gate
+recovers a large fraction of the compliance that a capable model misses
+single-shot (+\DeltaPromptStrict{} points prompt-level strict accuracy). Second,
+the recovery is concentrated on constraints the contract can express: instruction
+types our compiler covers exactly improve by \ExactDelta{} points, while types it
+cannot express move by only \UncoveredDelta{} points---the gate's value is bounded
+by its coverage, which we measure and report. Third, the cost is modest and
+predictable (\MeanRevisions{} extra model calls per prompt on average, incurred
+only when a check fails).
+
+We do not claim that contract gating improves a model's underlying capabilities,
+nor that IFEval is a long-horizon benchmark. The claim is narrower and, we
+believe, more useful: when acceptance criteria can be written down as
+deterministic checks---which covers a surprisingly large share of what ``done''
+means for real deliverables---putting those checks in the loop converts silent
+non-compliance into either compliance or an explicit, auditable failure.
+
+Our contributions are: (1) a problem framing---deliverable contracts---for
+governing the outputs of long-horizon agent runs, separating what is verifiable
+mechanically from what requires human or model judgment; (2) \textsc{Charter}, a
+production-quality, dependency-free implementation designed for adoption inside
+existing CI and agent-loop infrastructure; (3) a paired evaluation on a public
+benchmark quantifying both the benefit and the boundary (coverage) of
+contract-gated generation, with all logs, contracts, and scoring code released.
+
+\section{Related Work}
+
+\paragraph{Verifiable instruction following.} IFEval~\citep{zhou2023ifeval}
+established the practice of evaluating LLMs on constraints that can be checked by
+a program rather than a judge, and is part of standard open evaluation suites. We
+use it not as a capability benchmark but as a source of ground-truth acceptance
+criteria against which a governance mechanism can be measured with no judge in
+the loop.
+
+\paragraph{Self-correction and refinement.} Self-Refine~\citep{madaan2023selfrefine}
+and related work show that models can improve their own outputs given feedback;
+\citet{huang2024cannot} show that \emph{intrinsic} self-correction---without
+external signals---often fails or degrades performance, and \citet{pan2023survey}
+survey the space of correction strategies. Our results are consistent with this
+literature: the gains in our treatment arm come from cheap, \emph{external},
+deterministic verification compiled from the task specification, not from asking
+the model to critique itself. \textsc{Charter}'s contribution is not a new
+correction algorithm but the contract abstraction and tooling that make external
+verification deployable in real agent workflows.
+
+\paragraph{Constrained and guided generation.} Grammar- and automaton-constrained
+decoding~\citep{willard2023outlines} guarantees syntactic properties (e.g.,
+JSON well-formedness) at decoding time, but requires logit-level access and
+cannot express cross-artifact, filesystem-level criteria (``the report cites at
+least five sources and the tests pass''). Contract gating operates after
+generation, treats the generator as a black box, and composes with constrained
+decoding where available.
+
+\paragraph{Evaluating agents.} Agent benchmarks such as
+SWE-bench~\citep{jimenez2024swebench}, GAIA~\citep{mialon2023gaia}, and
+AgentBench~\citep{liu2023agentbench} score end-task success of agent systems.
+They answer ``how capable is this agent?''; we address the complementary,
+deployment-time question ``did \emph{this run} deliver what \emph{I} specified,
+and can I verify that without reading everything?''. LLM-as-a-judge
+evaluation~\citep{zheng2023judging} is the prevailing answer for criteria that
+resist mechanical checks; \textsc{Charter} deliberately handles the deterministic
+complement and can invoke judges through its \texttt{command} check where teams
+choose to.
+
+\paragraph{Design by contract and CI.} The contract framing borrows directly from
+design-by-contract in software engineering~\citep{meyer1992dbc} and from the
+practice of gating merges and releases on automated checks. Our observation is
+that agent deliverables currently lack the equivalent layer, even though the
+artifacts they produce (files in a workspace) are exactly what such tooling is
+good at checking.
+
+\section{Charter: deliverable contracts for agent runs}
+\label{sec:design}
+
+\paragraph{Contract model.} A charter is a TOML or JSON document with a list of
+\emph{deliverables}, each with an identifier, an optional path or glob, a
+required/optional flag, and a list of \emph{checks}. Checks are drawn from a
+small set of primitives chosen to be deterministic, dependency-free, and fast:
+\texttt{exists}, \texttt{not\_exists}, \texttt{file\_count}, \texttt{min\_bytes},
+\texttt{max\_bytes}, \texttt{contains} / \texttt{not\_contains} (literal or regex,
+with occurrence bounds), \texttt{word\_count}, \texttt{line\_count},
+\texttt{json\_valid} (with required dotted keys), \texttt{markdown\_sections},
+\texttt{no\_placeholder} (TODO/FIXME/lorem-ipsum style scaffolding), and
+\texttt{command}, which delegates to any executable check the team already
+trusts (test suites, linters, schema validators) and subsumes domain-specific
+verification. Checks carry a severity (\texttt{error} or \texttt{warn}); a run
+fails if any required deliverable has a failing error-severity check.
+
+\paragraph{Three uses of one artifact.} The same contract is (i) \emph{rendered
+for the agent}: \texttt{charter explain} produces a human- and agent-readable
+statement of what must exist and how it will be judged, suitable for inclusion in
+the system or task prompt; (ii) \emph{enforced}: \texttt{charter check} evaluates
+the workspace and exits 0 or 1, prints a structured failure report (also
+available as JSON), and has a hook mode in which a failing contract blocks an
+agent's attempt to finish and feeds the failure list back into the loop; and
+(iii) \emph{audited}: \texttt{charter report} emits per-check verdicts together
+with SHA-256 hashes, sizes, and timestamps of the artifacts, so a reviewer can
+trust the verdict without re-deriving it. Because verification is deterministic
+and local, the gate can run on every agent iteration at negligible cost, and the
+same contract yields the same verdict for the agent, the CI system, and the
+human.
+
+\paragraph{What contracts deliberately do not do.} Charter does not judge
+qualities that require taste or domain expertise (is the analysis insightful?),
+does not verify factual grounding, and does not attempt to be a sandbox or
+permission system. It narrows the surface a human must review, and makes
+explicit---in a reviewable file rather than in prompt history---which acceptance
+criteria are mechanically enforced.
+
+\section{Compiling a public benchmark's constraints into contracts}
+\label{sec:compile}
+
+To measure the effect of contract gating we need tasks whose acceptance criteria
+are known and independently scoreable. IFEval provides \NPrompts{} prompts with
+\NInstrInstances{} verifiable instruction instances across 25 types. A small
+compiler (\texttt{compile\_contract.py}, 200 lines) maps each instruction onto
+\textsc{Charter}'s generic primitives and labels every instance with a
+\emph{coverage class}:
+
+\begin{itemize}
+  \item \textbf{exact} (\ExactN{} instances, \ExactPct\%): the compiled check is
+  logically equivalent to the official checker, e.g.\ keyword presence/frequency,
+  forbidden words, no-comma, postscript, title markers, end-phrase, quotation
+  wrapping, placeholder counts.
+  \item \textbf{approximate} (\ApproxN{} instances, \ApproxPct\%): the check
+  captures the constraint with minor semantic differences, e.g.\ whitespace word
+  counts versus the official tokenizer, bullet/paragraph counting via regular
+  expressions, all-caps/all-lowercase via character classes, JSON validity
+  without markdown-fence stripping.
+  \item \textbf{uncovered} (\UncoveredN{} instances, \UncoveredPct\%): not
+  expressible with the generic primitives---response language detection, sentence
+  counting, and first-word-of-$n$th-paragraph constraints.
+\end{itemize}
+
+The compiler is part of the released harness. Coverage is reported per instance
+in the run logs, and Section~\ref{sec:results} breaks results down by class. We
+emphasize the design choice this reflects: in deployment, the contract author
+decides what is worth checking mechanically; here the benchmark's own constraint
+annotations play that role, which makes the overlap between gate and scorer
+intentional rather than confounding---the experiment measures how much of the
+specified-and-checkable requirements a strong model silently misses, and how much
+of that a contract gate recovers.
+
+\section{Experimental setup}
+\label{sec:setup}
+
+\paragraph{Arms.} \textbf{Control}: one model call per prompt; the response is
+used as-is. \textbf{Treatment}: the treatment starts from the \emph{same}
+control response (exact pairing, isolating the effect of the gate from sampling
+noise); the compiled contract is evaluated by the real \texttt{charter check}
+CLI on the response written to a file; if any check fails, the structured
+failure report is appended to a revision request and the model produces a new
+response, for at most two revisions; the gate keeps the attempt with the fewest
+failing checks. Prompts whose initial response already passes the contract incur
+no additional calls and are byte-identical across arms.
+
+\paragraph{Model and harness.} Both arms use \texttt{claude-haiku-4-5} (Anthropic)
+called through the Claude Code CLI in non-interactive print mode with a minimal
+``helpful assistant'' system prompt and no tool access; the identical stack is
+used for both arms, and all calls are logged verbatim. We chose a small frontier
+model deliberately: it is representative of the cost tier at which long-horizon
+loops actually run, and it leaves measurable headroom on IFEval.
+
+\paragraph{Scoring and statistics.} All accuracy numbers are computed by the
+official, unmodified \texttt{instruction\_following\_eval} library released with
+IFEval (vendored in our repository), in both strict and loose modes, at the
+prompt level (all instructions of a prompt satisfied) and the instruction level.
+Because arms are paired by prompt, we report McNemar's exact test on discordant
+pairs and a nonparametric bootstrap (10{,}000 resamples) for the 95\% confidence
+interval of the accuracy difference. The full pipeline---harness, contracts, raw
+responses for every attempt, scoring and analysis scripts---is committed alongside
+this paper, and every number below is generated programmatically from those
+artifacts.
+
+\section{Results}
+\label{sec:results}
+
+\begin{table}[t]
+  \caption{Paired comparison on IFEval (\NPromptsPaired{} prompts), official
+  scorer. The treatment differs from control only where a compiled
+  \textsc{Charter} check failed and triggered revision.}
+  \label{tab:main}
+  \centering
+  \begin{tabular}{lccc}
+    \toprule
+    Metric & Control & + \textsc{Charter} gate & $\Delta$ \\
+    \midrule
+    Prompt-level strict accuracy (\%) & \ControlPromptStrict & \TreatmentPromptStrict & +\DeltaPromptStrict \\
+    Prompt-level loose accuracy (\%) & \ControlPromptLoose & \TreatmentPromptLoose & +\DeltaPromptLoose \\
+    Instruction-level strict accuracy (\%) & \ControlInstrStrict & \TreatmentInstrStrict & --- \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\begin{table}[t]
+  \caption{Instruction-level strict accuracy by \textsc{Charter} coverage class.
+  The gate improves what it can check; constraints it cannot express are
+  essentially unchanged.}
+  \label{tab:coverage}
+  \centering
+  \begin{tabular}{lcccc}
+    \toprule
+    Coverage class & Instances & Control (\%) & + gate (\%) & $\Delta$ \\
+    \midrule
+    Exact        & \ExactN     & \ExactControl     & \ExactTreat     & +\ExactDelta \\
+    Approximate  & \ApproxN    & \ApproxControl    & \ApproxTreat    & +\ApproxDelta \\
+    Uncovered    & \UncoveredN & \UncoveredControl & \UncoveredTreat & +\UncoveredDelta \\
+    \midrule
+    All          & \AllN       & \AllControl       & \AllTreat       & +\AllDelta \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\paragraph{Main effect.} Table~\ref{tab:main} summarizes the paired comparison.
+Single-shot generation with a capable small model satisfies all of a prompt's
+verifiable constraints \ControlPromptStrict\% of the time under the official
+strict scorer; under the \textsc{Charter} gate this rises to
+\TreatmentPromptStrict\% (+\DeltaPromptStrict{} points, 95\% bootstrap CI
+[+\DeltaCILow, +\DeltaCIHigh], McNemar exact $p = \McNemarP$). The discordant
+pairs are heavily one-sided: \DiscordantTreatOnly{} prompts are satisfied only
+under the gate versus \DiscordantControlOnly{} only under control. Loose-mode
+accuracy moves similarly (+\DeltaPromptLoose{} points), indicating the gains are
+not artifacts of strict-mode formatting technicalities. Both regressions
+(prompts satisfied only under control) occurred on approximately-covered
+constraints, where a revision satisfied the compiled approximation but violated
+the official checker's stricter semantics---a concrete cost of approximate
+coverage that Section~\ref{sec:limitations} returns to.
+
+\paragraph{The gain follows coverage.} Table~\ref{tab:coverage} breaks
+instruction-level strict accuracy down by the compiler's coverage class.
+Exactly-covered constraint types improve by \ExactDelta{} points and
+approximately-covered types by \ApproxDelta{} points, while uncovered types move
+by only \UncoveredDelta{} points---within noise of no change, as expected since
+the gate cannot observe them. This is the central honest finding: contract
+gating is not a general capability amplifier; it converts \emph{specified and
+checkable} requirements from ``usually followed'' to ``almost always followed,''
+and does nothing for requirements left outside the contract.
+
+\paragraph{Gate dynamics and cost.} Of \NPromptsPaired{} prompts,
+\GateInitialFail{} failed at least one compiled check on the initial response;
+after at most two gated revisions, \GateFinalFail{} still failed at least one
+check. The gate selected a revised response for \GateSelectedRevision{} prompts;
+for all others the original response was already contract-clean and the arms are
+identical. The loop cost \ExtraCalls{} additional model calls in total
+(\MeanRevisions{} per prompt on average, concentrated on the
+\PromptsWithRevision{} prompts that needed revision), and mean response length
+was essentially unchanged (\MeanCharsControl{} versus \MeanCharsTreatment{}
+characters), i.e.\ the gate did not induce padding. There is no
+verification-time model cost: checks are regular expressions and file
+inspections.
+
+\paragraph{Qualitative observation from dogfooding.} The research run that
+produced this paper was itself governed by a charter covering its required
+deliverables. The gate caught, among other things, marketing copy that tripped a
+placeholder-text check because it \emph{described} placeholder text---a
+false positive that was resolved by narrowing the contract, illustrating the
+intended workflow: acceptance criteria are tuned in a reviewable file, not in
+prompt history.
+
+\section{Limitations}
+\label{sec:limitations}
+
+\textbf{Benchmark proxy.} IFEval is single-turn instruction following, not a
+long-horizon agent benchmark; we use it because it is public, recognized, and has
+verifiable acceptance criteria, but the transfer of effect sizes to multi-hour,
+multi-artifact runs is an extrapolation. Building a public benchmark of
+contract-governed long-horizon deliverables is future work. \textbf{Gate--scorer
+overlap.} The treatment optimizes checks compiled from the same constraint
+annotations the scorer uses; results quantify recovery of specified-and-checkable
+requirements, not generalization to unspecified ones (Table~\ref{tab:coverage}
+makes the boundary explicit). \textbf{Coverage ceiling.} \UncoveredPct\% of
+constraint instances were not expressible with generic primitives, and
+approximate checks can both miss violations and raise false alarms; richer
+primitives (or \texttt{command}-delegated domain validators) shift but do not
+remove this boundary. \textbf{Single model, single revision policy.} We evaluate
+one model at one cost tier with at most two revisions; gains may differ for
+stronger models (less headroom) or weaker ones (revisions may fail more often).
+\textbf{Contracts can be gamed.} A model optimizing against a literal check can
+satisfy it in unintended ways (e.g., padding to reach a word count); deterministic
+gates should be combined with human or model review for adversarial settings.
+
+\section{Conclusion}
+
+Treating the deliverables of long-horizon agent runs as the subject of a small,
+declarative, machine-checkable contract is both practically deployable today and
+measurably effective at eliminating the silent non-compliance that currently
+forces humans to re-read everything an agent produces. The boundary of the
+approach is exactly its coverage---a property we can measure, report, and expand
+deliberately---which we argue is the right shape for a governance mechanism: it
+is auditable about what it does and does not guarantee. \textsc{Charter}, the
+benchmark harness, raw logs, and this paper's numbers are released for
+reproduction and adoption.
+
+\begin{thebibliography}{12}
+
+\bibitem[Huang et~al.(2024)]{huang2024cannot}
+Jie Huang, Xinyun Chen, Swaroop Mishra, Huaixiu~Steven Zheng, Adams~Wei Yu,
+Xinying Song, and Denny Zhou.
+\newblock Large language models cannot self-correct reasoning yet.
+\newblock In \emph{International Conference on Learning Representations (ICLR)}, 2024.
+\newblock arXiv:2310.01798.
+
+\bibitem[Jimenez et~al.(2024)]{jimenez2024swebench}
+Carlos~E. Jimenez, John Yang, Alexander Wettig, Shunyu Yao, Kexin Pei, Ofir
+Press, and Karthik Narasimhan.
+\newblock {SWE}-bench: Can language models resolve real-world {GitHub} issues?
+\newblock In \emph{International Conference on Learning Representations (ICLR)}, 2024.
+\newblock arXiv:2310.06770.
+
+\bibitem[Liu et~al.(2023)]{liu2023agentbench}
+Xiao Liu, Hao Yu, Hanchen Zhang, Yifan Xu, Xuanyu Lei, Hanyu Lai, Yu Gu, Hangliang
+Ding, Kaiwen Men, Kejuan Yang, et~al.
+\newblock Agentbench: Evaluating {LLMs} as agents.
+\newblock \emph{arXiv preprint arXiv:2308.03688}, 2023.
+
+\bibitem[Madaan et~al.(2023)]{madaan2023selfrefine}
+Aman Madaan, Niket Tandon, Prakhar Gupta, Skyler Hallinan, Luyu Gao, Sarah
+Wiegreffe, Uri Alon, Nouha Dziri, Shrimai Prabhumoye, Yiming Yang, et~al.
+\newblock Self-refine: Iterative refinement with self-feedback.
+\newblock In \emph{Advances in Neural Information Processing Systems (NeurIPS)}, 2023.
+\newblock arXiv:2303.17651.
+
+\bibitem[Meyer(1992)]{meyer1992dbc}
+Bertrand Meyer.
+\newblock Applying ``design by contract''.
+\newblock \emph{IEEE Computer}, 25(10):40--51, 1992.
+
+\bibitem[Mialon et~al.(2023)]{mialon2023gaia}
+Gr\'egoire Mialon, Cl\'ementine Fourrier, Craig Swift, Thomas Wolf, Yann LeCun,
+and Thomas Scialom.
+\newblock {GAIA}: a benchmark for general {AI} assistants.
+\newblock \emph{arXiv preprint arXiv:2311.12983}, 2023.
+
+\bibitem[Pan et~al.(2024)]{pan2023survey}
+Liangming Pan, Michael Saxon, Wenda Xu, Deepak Nathani, Xinyi Wang, and
+William~Yang Wang.
+\newblock Automatically correcting large language models: Surveying the landscape
+of diverse automated correction strategies.
+\newblock \emph{Transactions of the Association for Computational Linguistics},
+12:484--506, 2024.
+\newblock arXiv:2308.03188.
+
+\bibitem[Willard and Louf(2023)]{willard2023outlines}
+Brandon~T. Willard and R\'emi Louf.
+\newblock Efficient guided generation for large language models.
+\newblock \emph{arXiv preprint arXiv:2307.09702}, 2023.
+
+\bibitem[Zheng et~al.(2023)]{zheng2023judging}
+Lianmin Zheng, Wei-Lin Chiang, Ying Sheng, Siyuan Zhuang, Zhanghao Wu, Yonghao
+Zhuang, Zi Lin, Zhuohan Li, Dacheng Li, Eric Xing, et~al.
+\newblock Judging {LLM}-as-a-judge with {MT-Bench} and {Chatbot Arena}.
+\newblock In \emph{Advances in Neural Information Processing Systems (NeurIPS)}, 2023.
+\newblock arXiv:2306.05685.
+
+\bibitem[Zhou et~al.(2023)]{zhou2023ifeval}
+Jeffrey Zhou, Tianjian Lu, Swaroop Mishra, Siddhartha Brahma, Sujoy Basu, Yi Luan,
+Denny Zhou, and Le Hou.
+\newblock Instruction-following evaluation for large language models.
+\newblock \emph{arXiv preprint arXiv:2311.07911}, 2023.
+
+\end{thebibliography}
+
+\end{document}

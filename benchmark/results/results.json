@@ -1,0 +1,24 @@
+{
+  "benchmark": "IFEval (Zhou et al., 2023)",
+  "n_prompts_total": 541,
+  "control": {
+    "n_prompts_scored": 541,
+    "n_prompts_missing": 0,
+    "prompt_level_strict_accuracy": 0.87061,
+    "instruction_level_strict_accuracy": 0.910072,
+    "n_instructions_strict": 834,
+    "prompt_level_loose_accuracy": 0.903882,
+    "instruction_level_loose_accuracy": 0.932854,
+    "n_instructions_loose": 834
+  },
+  "treatment": {
+    "n_prompts_scored": 541,
+    "n_prompts_missing": 0,
+    "prompt_level_strict_accuracy": 0.939002,
+    "instruction_level_strict_accuracy": 0.960432,
+    "n_instructions_strict": 834,
+    "prompt_level_loose_accuracy": 0.953789,
+    "instruction_level_loose_accuracy": 0.970024,
+    "n_instructions_loose": 834
+  }
+}
