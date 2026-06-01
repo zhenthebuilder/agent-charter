@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Charter — deliverable contracts for AI agent runs</title>
+<meta name="description" content="Declare what a long-horizon AI agent must deliver, gate the run on machine-checkable acceptance criteria, and audit the result. One file, no dependencies.">
+<style>
+  :root{
+    --bg:#0d1117; --panel:#161b22; --panel2:#1c2230; --border:#2d333b;
+    --text:#e6edf3; --muted:#9aa7b4; --accent:#4ade80; --accent2:#22c55e;
+    --code:#0a0e14; --warn:#f87171; --link:#7dd3fc;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+       background:var(--bg);color:var(--text);line-height:1.6}
+  a{color:var(--link);text-decoration:none}
+  a:hover{text-decoration:underline}
+  .wrap{max-width:980px;margin:0 auto;padding:0 24px}
+  header{padding:24px 0;display:flex;justify-content:space-between;align-items:center}
+  .logo{font-weight:700;font-size:1.15rem;letter-spacing:.02em}
+  .logo span{color:var(--accent)}
+  nav a{margin-left:20px;color:var(--muted);font-size:.95rem}
+  .hero{padding:56px 0 40px;text-align:left}
+  .hero h1{font-size:2.6rem;line-height:1.15;margin:0 0 16px;max-width:820px}
+  .hero h1 em{font-style:normal;color:var(--accent)}
+  .hero p.lede{font-size:1.2rem;color:var(--muted);max-width:740px;margin:0 0 28px}
+  .install{background:var(--code);border:1px solid var(--border);border-radius:10px;
+           padding:14px 16px;display:flex;align-items:center;gap:12px;max-width:740px}
+  .install code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.95rem;color:#a5f3a5;
+                overflow-x:auto;white-space:nowrap;flex:1}
+  .install button{background:var(--accent2);color:#06250f;border:0;border-radius:6px;padding:8px 14px;
+                  font-weight:600;cursor:pointer;font-size:.85rem;flex-shrink:0}
+  .install button:hover{filter:brightness(1.1)}
+  .alt-install{color:var(--muted);font-size:.9rem;margin-top:10px}
+  .alt-install code{background:var(--panel);padding:2px 6px;border-radius:4px;font-size:.85rem}
+  .badges{margin-top:18px;display:flex;gap:10px;flex-wrap:wrap}
+  .badge{border:1px solid var(--border);border-radius:999px;padding:4px 12px;font-size:.82rem;color:var(--muted)}
+  section{padding:42px 0;border-top:1px solid var(--border)}
+  h2{font-size:1.6rem;margin:0 0 8px}
+  .sub{color:var(--muted);margin:0 0 28px;max-width:760px}
+  .cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:18px}
+  .card{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:20px}
+  .card h3{margin:0 0 8px;font-size:1.05rem}
+  .card h3 .n{color:var(--accent);margin-right:8px;font-family:ui-monospace,monospace}
+  .card p{margin:0;color:var(--muted);font-size:.95rem}
+  pre{background:var(--code);border:1px solid var(--border);border-radius:10px;padding:16px;
+      overflow-x:auto;font-size:.85rem;line-height:1.5;margin:14px 0 0}
+  code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  .tom .k{color:#7dd3fc} .tom .s{color:#a5f3a5} .tom .c{color:#6b7280} .tom .n{color:#fbbf24}
+  .sh .p{color:#6b7280} .sh .ok{color:#4ade80} .sh .bad{color:#f87171}
+  table{width:100%;border-collapse:collapse;margin-top:14px;font-size:.92rem}
+  th,td{padding:9px 12px;text-align:left;border-bottom:1px solid var(--border)}
+  th{color:var(--muted);font-weight:600}
+  td code{background:var(--panel2);padding:2px 6px;border-radius:4px;font-size:.85rem}
+  .evidence{background:linear-gradient(180deg,var(--panel) 0%,var(--panel2) 100%);
+            border:1px solid var(--border);border-radius:14px;padding:26px}
+  .evidence p{color:var(--muted)}
+  footer{padding:36px 0 56px;color:var(--muted);font-size:.9rem;border-top:1px solid var(--border)}
+  footer a{color:var(--muted);text-decoration:underline}
+  @media (max-width:640px){.hero h1{font-size:1.9rem}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div class="logo">⚖️ <span>charter</span></div>
+  <nav>
+    <a href="#how">How it works</a>
+    <a href="#checks">Checks</a>
+    <a href="#evidence">Evidence</a>
+    <a href="https://github.com/zhenthebuilder/agent-charter">GitHub</a>
+  </nav>
+</header>
+
+<div class="hero">
+  <h1>Your agent ran for six hours.<br>Did it deliver <em>what you asked for?</em></h1>
+  <p class="lede">
+    Charter is a deliverable contract for long-horizon AI agent runs: a small, declarative
+    file that states which artifacts must exist and which acceptance checks they must pass.
+    The same contract instructs the agent, gates the run with an exit code, and produces an
+    audit report — deterministically, with no LLM judge and no API key.
+  </p>
+  <div class="install">
+    <code id="install-cmd">uv tool install git+https://github.com/zhenthebuilder/agent-charter</code>
+    <button onclick="copyInstall()" id="copy-btn">Copy</button>
+  </div>
+  <p class="alt-install">
+    Also works with <code>pipx install git+https://github.com/zhenthebuilder/agent-charter</code>,
+    plain <code>pip install</code>, or just download the single
+    <a href="https://raw.githubusercontent.com/zhenthebuilder/agent-charter/main/charter.py">charter.py</a>
+    and run <code>python3 charter.py</code> — it has zero dependencies.
+  </p>
+  <div class="badges">
+    <span class="badge">Single file · stdlib only · Python ≥ 3.11</span>
+    <span class="badge">MIT license</span>
+    <span class="badge">Works with any agent framework</span>
+    <span class="badge">Evaluated on a public benchmark</span>
+  </div>
+</div>
+
+<section id="problem">
+  <h2>The failure mode isn't a crash — it's a confident "done"</h2>
+  <p class="sub">
+    Long-horizon agents rarely fail loudly. They finish, sound certain, and hand you a report
+    with a missing section, a TODO buried on page four, data files that were never written,
+    or tests that never ran. The current control mechanism — re-reading everything the agent
+    produced — does not survive contact with more than one run a day.
+  </p>
+  <div class="cols">
+    <div class="card"><h3>Acceptance criteria in prompts get dropped</h3>
+      <p>Instructions compete with everything else in context. Under pressure, the agent forgets
+      the word count, the required sections, the "don't touch vendored code" rule. Nothing enforces them.</p></div>
+    <div class="card"><h3>LLM judges are gates made of fog</h3>
+      <p>Useful for fuzzy quality, but expensive, non-deterministic, and hard to audit.
+      You can't block a release on a verdict that changes between runs.</p></div>
+    <div class="card"><h3>Review doesn't scale with agent throughput</h3>
+      <p>Agents got faster at producing deliverables; humans didn't get faster at checking them.
+      The bottleneck moved to verification — so verification needs to be automatic.</p></div>
+  </div>
+</section>
+
+<section id="how">
+  <h2>One contract, three uses</h2>
+  <p class="sub">Declare the deliverables once in <code>charter.toml</code>. Charter turns the same file into
+  instructions for the agent, a gate for the run, and an audit trail for the human.</p>
+
+  <div class="cols">
+    <div class="card">
+      <h3><span class="n">1</span>Declare</h3>
+      <p>List every artifact the run must produce and the checks it must pass — existence, length,
+      required sections, forbidden placeholder text, valid JSON, passing tests, anything a command can verify.</p>
+<pre class="tom"><code><span class="c"># charter.toml</span>
+<span class="k">[[deliverable]]</span>
+<span class="n">id</span> = <span class="s">"report"</span>
+<span class="n">path</span> = <span class="s">"report.md"</span>
+
+  <span class="k">[[deliverable.check]]</span>
+  <span class="n">type</span> = <span class="s">"markdown_sections"</span>
+  <span class="n">sections</span> = [<span class="s">"Results"</span>, <span class="s">"Limitations"</span>]
+
+  <span class="k">[[deliverable.check]]</span>
+  <span class="n">type</span> = <span class="s">"no_placeholder"</span>
+
+  <span class="k">[[deliverable.check]]</span>
+  <span class="n">type</span> = <span class="s">"command"</span>
+  <span class="n">run</span> = <span class="s">"python3 -m pytest -q"</span></code></pre>
+    </div>
+    <div class="card">
+      <h3><span class="n">2</span>Gate</h3>
+      <p>Exit code 0 or 1. Put it in CI, in a pre-commit hook, or in the agent loop itself —
+      the failure report is structured so it can be fed straight back to the model for revision.</p>
+<pre class="sh"><code><span class="p">$</span> charter check
+<span class="bad">✗ report — Final report</span>
+    <span class="bad">✗ [word_count] report.md has 412 words (&lt; 1500)</span>
+    <span class="bad">✗ [no_placeholder] placeholder text found: report.md (2x, e.g. 'TODO')</span>
+<span class="ok">✓ data — Raw results data</span>
+<span class="bad">FAIL</span> — 6/8 checks passed, 2 failed
+
+<span class="p"># Claude Code: block the agent from stopping early</span>
+<span class="p">$</span> charter hook claude</code></pre>
+    </div>
+    <div class="card">
+      <h3><span class="n">3</span>Audit</h3>
+      <p>When the run finishes, get a report with pass/fail per check, file hashes, sizes and
+      timestamps — review the contract verdict instead of re-reading the transcript.</p>
+<pre class="sh"><code><span class="p">$</span> charter report -o audit.md
+<span class="p">$</span> charter explain   <span class="p"># contract → agent instructions</span>
+<span class="p">$</span> charter check --json | jq .summary
+{
+  "checks_total": 14,
+  "checks_passed": 14,
+  "checks_failed": 0
+}</code></pre>
+    </div>
+  </div>
+</section>
+
+<section id="checks">
+  <h2>Deterministic checks that compose</h2>
+  <p class="sub">A dozen primitives cover most of what "done" means in practice; the <code>command</code> check
+  hands the rest to any validator you already trust.</p>
+  <table>
+    <tr><th>Check</th><th>Verifies</th></tr>
+    <tr><td><code>exists</code> / <code>not_exists</code> / <code>file_count</code></td><td>required artifacts are present (and forbidden ones aren't)</td></tr>
+    <tr><td><code>contains</code> / <code>not_contains</code></td><td>required or forbidden patterns, with min/max occurrence counts</td></tr>
+    <tr><td><code>no_placeholder</code></td><td>no TODO / FIXME / TBD / lorem-ipsum text left in deliverables</td></tr>
+    <tr><td><code>word_count</code> / <code>line_count</code> / <code>min_bytes</code> / <code>max_bytes</code></td><td>length and size bounds</td></tr>
+    <tr><td><code>markdown_sections</code></td><td>required headings are present</td></tr>
+    <tr><td><code>json_valid</code></td><td>files parse as JSON and contain required keys</td></tr>
+    <tr><td><code>command</code></td><td>tests, linters, builds, schema validators — anything with an exit code</td></tr>
+  </table>
+</section>
+
+<section id="evidence">
+  <h2>Evidence, not promises</h2>
+  <div class="evidence">
+    <p>
+      We evaluated Charter's gate-and-revise loop on <strong>IFEval</strong>, a public benchmark of
+      541 prompts with verifiable output constraints, in a paired A/B against single-shot generation
+      from the same model (claude-haiku-4-5), scored with the official IFEval library:
+    </p>
+    <table>
+      <tr><th></th><th>single shot</th><th>+ Charter gate</th></tr>
+      <tr><td>prompt-level strict accuracy</td><td>87.1%</td><td><strong>93.9%</strong> (+6.8 pp, McNemar p ≈ 8×10⁻¹⁰)</td></tr>
+      <tr><td>constraint types Charter could not express</td><td>80.0%</td><td>80.0% — unchanged</td></tr>
+      <tr><td>extra model calls per prompt</td><td>—</td><td>0.17</td></tr>
+    </table>
+    <p>
+      We publish the limitation up front: <em>a gate can only fix what it can check.</em>
+      The paper reports coverage — which constraint types Charter's generic checks can and cannot
+      express — alongside the gains and costs, and the contract compiler, harness, raw logs, and
+      scoring code ship in the repository so every number traces to a script you can run.
+    </p>
+    <p>
+      <a href="https://github.com/zhenthebuilder/agent-charter">Read the paper and reproduce the run →</a>
+    </p>
+  </div>
+</section>
+
+<section id="start">
+  <h2>Try it in five minutes</h2>
+  <pre class="sh"><code><span class="p">$</span> uv tool install git+https://github.com/zhenthebuilder/agent-charter
+<span class="p">$</span> cd your-agent-workspace
+<span class="p">$</span> charter init        <span class="p"># starter contract</span>
+<span class="p">$</span> charter check        <span class="p"># gate the workspace</span>
+<span class="p">$</span> charter hook claude  <span class="p"># wire it into your agent loop</span></code></pre>
+</section>
+
+<footer>
+  <p>
+    Charter is open source under the MIT license ·
+    <a href="https://github.com/zhenthebuilder/agent-charter">github.com/zhenthebuilder/agent-charter</a>
+    · benchmark data: <a href="https://arxiv.org/abs/2311.07911">IFEval (Zhou et al., 2023)</a>
+  </p>
+  <p>This page is a single static HTML file — no build step, no trackers.</p>
+</footer>
+
+</div>
+<script>
+function copyInstall(){
+  const cmd = document.getElementById('install-cmd').textContent;
+  navigator.clipboard.writeText(cmd).then(()=>{
+    const b = document.getElementById('copy-btn');
+    b.textContent = 'Copied!';
+    setTimeout(()=>{ b.textContent = 'Copy'; }, 1600);
+  });
+}
+</script>
+</body>
+</html>
