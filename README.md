@@ -45,7 +45,7 @@ $EDITOR charter.toml  # declare your deliverables
 charter check         # exit 0 if the contract is satisfied, 1 if not
 ```
 
-A contract looks like this:
+Here's an example contract:
 
 ```toml
 [charter]
