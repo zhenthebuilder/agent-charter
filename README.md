@@ -7,7 +7,7 @@ is whatever the agent decided "done" means. Charter makes "done" something you
 declare up front and check by machine: a small `charter.toml` that lists the
 artifacts the run must produce and the acceptance checks each one must pass.
 
-The same contract is used three ways:
+The same contract serves three purposes:
 
 | | command | what it does |
 |---|---|---|
