@@ -106,7 +106,7 @@ title = "The included scripts actually run"
 | `markdown_sections` | required headings are present |
 | `command` | an arbitrary command (tests, linter, build, schema validator) exits 0 |
 
-`charter checks` prints the full reference. Checks default to `severity = "error"`;
+`charter checks` prints the complete check reference. Checks default to `severity = "error"`;
 use `severity = "warn"` for advisory checks that should not fail the run.
 
 ## Putting it in the loop
